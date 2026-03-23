@@ -1,5 +1,5 @@
 
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import ChartPanel, { type Candle } from './ChartPanel'
 
 type AssetType = 'index' | 'metal' | 'crypto' | 'stock' | 'forex'
@@ -78,8 +78,11 @@ export default function MarketDashboardApp() {
   const [newType, setNewType] = useState<AssetType>('crypto')
   const [newCurrency, setNewCurrency] = useState('USD')
   const [newPaprikaId, setNewPaprikaId] = useState('')
+  const [newTdSymbol, setNewTdSymbol] = useState('')
   const [coinList, setCoinList] = useState<{ symbol: string; name: string }[]>([])
+  const [tdSearchResults, setTdSearchResults] = useState<{ symbol: string; name: string; currency: string; exchange: string; instrumentType: string }[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const searchTimer = useRef<number | null>(null)
 
   useEffect(() => {
     try {
@@ -229,21 +232,57 @@ export default function MarketDashboardApp() {
       .catch(() => {})
   }, [])
 
-  const suggestions = newName.length >= 1
+  // Debounced TD symbol search for stocks/ETFs/indices
+  useEffect(() => {
+    if (newName.length < 1) { setTdSearchResults([]); return }
+    if (searchTimer.current) clearTimeout(searchTimer.current)
+    searchTimer.current = window.setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/td/symbol_search?symbol=${encodeURIComponent(newName)}&outputsize=8`)
+        if (!res.ok) return
+        const json = await res.json()
+        if (json.status !== 'ok') return
+        setTdSearchResults((json.data || []).map((d: any) => ({
+          symbol: d.symbol,
+          name: d.instrument_name,
+          currency: d.currency || 'USD',
+          exchange: d.exchange || '',
+          instrumentType: d.instrument_type || '',
+        })))
+      } catch {}
+    }, 400)
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current) }
+  }, [newName])
+
+  const cryptoSuggestions = newName.length >= 1
     ? coinList
-        .filter(
-          (c) =>
-            c.name.toLowerCase().includes(newName.toLowerCase()) ||
-            c.symbol.toLowerCase().startsWith(newName.toLowerCase())
-        )
-        .slice(0, 8)
+        .filter(c => c.name.toLowerCase().includes(newName.toLowerCase()) || c.symbol.toLowerCase().startsWith(newName.toLowerCase()))
+        .slice(0, 4)
+        .map(c => ({ ...c, source: 'cc' as const, exchange: '', instrumentType: 'Crypto', currency: 'USD' }))
     : []
+
+  const stockSuggestions = tdSearchResults
+    .slice(0, 6)
+    .map(s => ({ ...s, source: 'td' as const }))
+
+  const suggestions = [...cryptoSuggestions, ...stockSuggestions]
 
   const selectCoin = (coin: { symbol: string; name: string }) => {
     setNewName(coin.name)
     setNewTvSymbol(`${coin.symbol}-USD`)
     setNewType('crypto')
     setNewPaprikaId(coin.symbol.toLowerCase())
+    setNewTdSymbol('')
+    setShowSuggestions(false)
+  }
+
+  const selectStock = (stock: { symbol: string; name: string; currency: string; instrumentType: string }) => {
+    setNewName(stock.name)
+    setNewTvSymbol(stock.symbol)
+    setNewType('stock')
+    setNewCurrency(stock.currency)
+    setNewPaprikaId('')
+    setNewTdSymbol(stock.symbol)
     setShowSuggestions(false)
   }
 
@@ -315,16 +354,19 @@ export default function MarketDashboardApp() {
                 minWidth: 240,
                 boxShadow: '0 8px 24px rgba(0,0,0,0.4)',
               }}>
-                {suggestions.map((coin) => (
+                {suggestions.map((item) => (
                   <div
-                    key={coin.symbol}
-                    onMouseDown={() => selectCoin(coin)}
+                    key={`${item.source}-${item.symbol}`}
+                    onMouseDown={() => item.source === 'cc' ? selectCoin(item) : selectStock(item)}
                     style={{ padding: '8px 12px', cursor: 'pointer', display: 'flex', gap: 8, alignItems: 'center' }}
                     onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(59,130,246,0.15)')}
                     onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                   >
-                    <span style={{ fontWeight: 700, fontSize: 13 }}>{coin.symbol}</span>
-                    <span style={{ opacity: 0.7, fontSize: 12 }}>{coin.name}</span>
+                    <span style={{ fontWeight: 700, fontSize: 13 }}>{item.symbol}</span>
+                    <span style={{ opacity: 0.7, fontSize: 12, flex: 1 }}>{item.name}</span>
+                    <span style={{ fontSize: 11, opacity: 0.5, whiteSpace: 'nowrap' }}>
+                      {item.source === 'td' ? item.exchange || item.instrumentType : 'Crypto'}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -380,11 +422,13 @@ export default function MarketDashboardApp() {
                   type: newType,
                   currency: (newCurrency.trim() || 'USD').toUpperCase(),
                   paprikaId: newPaprikaId.trim() ? newPaprikaId.trim().toLowerCase() : undefined,
+                  tdSymbol: newTdSymbol.trim() || undefined,
                 },
               ])
               setNewName('')
               setNewTvSymbol('')
               setNewPaprikaId('')
+              setNewTdSymbol('')
             }}
             style={{
               background: assets.length >= MAX_ASSETS ? 'rgba(59,130,246,0.3)' : 'rgba(59,130,246,0.9)',
