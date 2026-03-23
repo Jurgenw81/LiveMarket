@@ -171,8 +171,12 @@ export default function MarketDashboardApp() {
           const n = { ...prev }
           for (const a of tdAssets) {
             const raw = tdAssets.length === 1 ? json : json[a.tdSymbol!]
+            if (raw?.status === 'error') {
+              n[a.id] = { loading: false, error: raw.message || 'TD error' }
+              continue
+            }
             const price = Number(raw?.price)
-            n[a.id] = Number.isFinite(price)
+            n[a.id] = Number.isFinite(price) && price > 0
               ? { loading: false, price, changes: { '5m': NaN, '1h': NaN, '4h': NaN, '1d': NaN, '1w': NaN } }
               : { loading: false, error: 'bad price' }
           }
@@ -186,11 +190,9 @@ export default function MarketDashboardApp() {
     }
 
     const runCandles = async () => {
-      if (!TD_KEY) return
       const candleUpdates = await Promise.all(tdAssets.map(async (a) => {
         try {
           const json = await fetchTD('/time_series', { symbol: a.tdSymbol!, interval: '1day', outputsize: '365' })
-          if (json.status === 'error') return { id: a.id, c: [] }
           const rows: any[] = (json.values || []).slice().reverse()
           const candles = rows
             .filter(r => r.datetime && Number(r.close) > 0)
