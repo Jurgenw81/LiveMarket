@@ -96,15 +96,14 @@ export default function MarketDashboardApp() {
     return res.json()
   }
 
-  const TD_KEY = import.meta.env.VITE_TWELVE_DATA_KEY as string | undefined
-
   const fetchTD = async (path: string, params: Record<string, string>) => {
-    if (!TD_KEY) throw new Error('no TD key')
-    // Build query string manually — URLSearchParams encodes / and , which breaks TD symbol names
-    const qs = `apikey=${TD_KEY}&` + Object.entries(params).map(([k, v]) => `${k}=${v}`).join('&')
-    const res = await fetch(`/api/td${path}?${qs}`)
+    // apikey is added server-side by api/td/[...path].js — never exposed in client
+    const qs = Object.entries(params).map(([k, v]) => `${k}=${v}`).join('&')
+    const res = await fetch(`/api/td${path}${qs ? '?' + qs : ''}`)
     if (!res.ok) throw new Error(`TD ${res.status}`)
-    return res.json()
+    const json = await res.json()
+    if (json?.status === 'error') throw new Error(json.message || 'TD error')
+    return json
   }
 
   const [candlesById, setCandlesById] = useState<Record<string, Candle[]>>({})
@@ -164,11 +163,6 @@ export default function MarketDashboardApp() {
     let stop = false
 
     const runPrices = async () => {
-      if (!TD_KEY) {
-        const err = { loading: false, error: 'add VITE_TWELVE_DATA_KEY to Vercel env' } as QuoteData
-        setQuotes(prev => { const n = { ...prev }; for (const a of tdAssets) n[a.id] = err; return n })
-        return
-      }
       const symbols = tdAssets.map(a => a.tdSymbol!).join(',')
       try {
         const json = await fetchTD('/price', { symbol: symbols })

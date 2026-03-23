@@ -4,7 +4,6 @@
   "framework": "vite",
   "rewrites": [
     { "source": "/api/cc/:path*", "destination": "https://min-api.cryptocompare.com/:path*" },
-    { "source": "/api/td/:path*", "destination": "https://api.twelvedata.com/:path*" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
