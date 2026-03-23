@@ -1,0 +1,86 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+/* Layout */
+.dash-root {
+  padding: 32px;
+}
+
+.dash-title {
+  font-size: 36px;
+  margin: 0;
+}
+
+.dash-form-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.dash-search-wrap {
+  position: relative;
+}
+
+.dash-input-wide {
+  width: 320px;
+}
+
+.dash-input-medium {
+  width: 260px;
+}
+
+.dash-input-sm {
+  width: 90px;
+}
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.dash-chart {
+  height: 320px;
+  width: 100%;
+  margin-top: 12px;
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  .dash-root {
+    padding: 14px;
+  }
+
+  .dash-title {
+    font-size: 22px;
+  }
+
+  .dash-form-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dash-form-row input,
+  .dash-form-row select,
+  .dash-search-wrap {
+    width: 100%;
+  }
+
+  .dash-input-wide,
+  .dash-input-medium,
+  .dash-input-sm {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .dash-chart {
+    height: 220px;
+  }
+}

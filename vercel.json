@@ -1,0 +1,10 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/api/cc/:path*", "destination": "/api/cc/:path*" },
+    { "source": "/api/yahoo/:path*", "destination": "/api/yahoo/:path*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

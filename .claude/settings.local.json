@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s \"https://min-api.cryptocompare.com/data/v2/histohour?fsym=BTC&tsym=USD&limit=5\")",
+      "Bash(curl -s \"https://stooq.com/q/d/l/?s=btc.v&i=d\")",
+      "Bash(curl -s \"https://stooq.com/q/d/l/?s=^ndx&i=d\")",
+      "Bash(npx vite:*)",
+      "Bash(curl -s \"https://stooq.com/q/d/l/?s=xptusd&i=d\")",
+      "Bash(curl -s \"https://api.coinpaprika.com/v1/tickers/tao-bittensor?quotes=USD\")",
+      "Bash(curl -si https://api.coinpaprika.com/v1/tickers/btc-bitcoin?quotes=USD)",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s \"https://min-api.cryptocompare.com/data/v2/histohour?fsym=TAO&tsym=USD&limit=5\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''''Response:'''', d.get\\(''''Response''''\\)\\); print\\(''''Data length:'''', len\\(d.get\\(''''Data'''', {}\\).get\\(''''Data'''', []\\)\\)\\)\")",
+      "Bash(echo \"HTTP_PROXY=$HTTP_PROXY\" echo \"HTTPS_PROXY=$HTTPS_PROXY\" echo \"http_proxy=$http_proxy\" echo \"https_proxy=$https_proxy\" curl -sv \"https://api.coinpaprika.com/v1/global\")",
+      "Bash(curl -s \"https://min-api.cryptocompare.com/data/price?fsym=BTC&tsyms=USD\" echo \"\" curl -s \"https://min-api.cryptocompare.com/data/pricemultifull?fsyms=BTC&tsyms=USD\")",
+      "Bash(curl -s \"https://min-api.cryptocompare.com/data/pricemultifull?fsyms=BTC&tsyms=USD\")",
+      "Bash(curl -s \"https://min-api.cryptocompare.com/data/v2/histoday?fsym=BTC&tsym=USD&limit=7\")",
+      "Bash(python3 -c \":*)",
+      "Bash(curl -s https://min-api.cryptocompare.com/data/all/coinlist?limit=5)",
+      "Bash(curl -s https://min-api.cryptocompare.com/data/all/coinlist)",
+      "Bash(curl -s \"https://min-api.cryptocompare.com/data/top/mktcapfull?limit=10&tsym=USD\")",
+      "Bash(curl -s \"https://min-api.cryptocompare.com/data/top/mktcapfull?limit=250&tsym=USD\")",
+      "Bash(curl -si \"https://min-api.cryptocompare.com/data/price?fsym=BTC&tsyms=USD\")",
+      "Bash(head -5 echo ---stooq--- curl -si \"https://stooq.com/q/d/l/?s=xauusd&i=d\")",
+      "Bash(curl -s \"https://stooq.com/q/d/l/?s=xauusd&i=d\")",
+      "Bash(curl -s -A Mozilla/5.0 \"https://query1.finance.yahoo.com/v8/finance/chart/%5EGSPC?interval=1d&range=10d\")",
+      "Bash(curl -s \"https://min-api.cryptocompare.com/data/pricemultifull?fsyms=SOL,LINK&tsyms=USD\")",
+      "Bash(npm run:*)"
+    ]
+  }
+}
