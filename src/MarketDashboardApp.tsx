@@ -25,22 +25,26 @@ type QuoteData = {
   error?: string
 }
 
-const DEFAULT_ASSETS: MarketAsset[] = [
-  { id: 'nasdaq', name: 'Nasdaq 100', symbol: '^NDX', tvSymbol: 'OANDA:NAS100USD', type: 'index', currency: 'USD', stooqSymbol: '^ndx', yahooSymbol: '^NDX' },
-  { id: 'sp500', name: 'S&P 500', symbol: '^GSPC', tvSymbol: 'OANDA:SPX500USD', type: 'index', currency: 'USD', stooqSymbol: '^spx', yahooSymbol: '^GSPC' },
-  { id: 'gold', name: 'Gold', symbol: 'XAUUSD', tvSymbol: 'OANDA:XAUUSD', type: 'metal', currency: 'USD', stooqSymbol: 'xauusd', yahooSymbol: 'GC=F' },
-  { id: 'silver', name: 'Silver', symbol: 'XAGUSD', tvSymbol: 'OANDA:XAGUSD', type: 'metal', currency: 'USD', stooqSymbol: 'xagusd', yahooSymbol: 'SI=F' },
-  { id: 'platinum', name: 'Platinum', symbol: 'XPTUSD', tvSymbol: 'OANDA:XPTUSD', type: 'metal', currency: 'USD', stooqSymbol: 'xptusd', yahooSymbol: 'PL=F' },
+const MAX_ASSETS = 10
 
-  { id: 'bitcoin', name: 'Bitcoin', symbol: 'BTC-USD', tvSymbol: 'BTC', type: 'crypto', currency: 'USD', paprikaId: 'btc-bitcoin' },
-  { id: 'ethereum', name: 'Ethereum', symbol: 'ETH-USD', tvSymbol: 'ETH', type: 'crypto', currency: 'USD', paprikaId: 'eth-ethereum' },
-  { id: 'solana', name: 'Solana', symbol: 'SOL-USD', tvSymbol: 'SOL', type: 'crypto', currency: 'USD', paprikaId: 'sol-solana' },
+const DEFAULT_ASSETS: MarketAsset[] = [
+  // Metals via CryptoCompare (XAU/XAG/XPT) — Yahoo Finance blocks cloud IPs
+  { id: 'gold',     name: 'Gold',     symbol: 'XAU-USD', tvSymbol: 'XAU/USD', type: 'metal',  currency: 'USD', paprikaId: 'xau' },
+  { id: 'silver',   name: 'Silver',   symbol: 'XAG-USD', tvSymbol: 'XAG/USD', type: 'metal',  currency: 'USD', paprikaId: 'xag' },
+  { id: 'platinum', name: 'Platinum', symbol: 'XPT-USD', tvSymbol: 'XPT/USD', type: 'metal',  currency: 'USD', paprikaId: 'xpt' },
+  // Indices via Yahoo Finance (best-effort)
+  { id: 'nasdaq', name: 'Nasdaq 100', symbol: '^NDX',  tvSymbol: 'OANDA:NAS100USD', type: 'index', currency: 'USD', yahooSymbol: '^NDX'  },
+  { id: 'sp500',  name: 'S&P 500',   symbol: '^GSPC', tvSymbol: 'OANDA:SPX500USD', type: 'index', currency: 'USD', yahooSymbol: '^GSPC' },
+  // Crypto via CryptoCompare
+  { id: 'bitcoin',   name: 'Bitcoin',   symbol: 'BTC-USD',  tvSymbol: 'BTC',  type: 'crypto', currency: 'USD', paprikaId: 'btc-bitcoin'   },
+  { id: 'ethereum',  name: 'Ethereum',  symbol: 'ETH-USD',  tvSymbol: 'ETH',  type: 'crypto', currency: 'USD', paprikaId: 'eth-ethereum'  },
+  { id: 'solana',    name: 'Solana',    symbol: 'SOL-USD',  tvSymbol: 'SOL',  type: 'crypto', currency: 'USD', paprikaId: 'sol-solana'    },
   { id: 'chainlink', name: 'Chainlink', symbol: 'LINK-USD', tvSymbol: 'LINK', type: 'crypto', currency: 'USD', paprikaId: 'link-chainlink' },
-  { id: 'bittensor', name: 'Bittensor', symbol: 'TAO-USD', tvSymbol: 'TAO', type: 'crypto', currency: 'USD', paprikaId: 'tao-bittensor' },
+  { id: 'bittensor', name: 'Bittensor', symbol: 'TAO-USD',  tvSymbol: 'TAO',  type: 'crypto', currency: 'USD', paprikaId: 'tao-bittensor' },
 ]
 
-// bumped to v7: force reset to pick up SOL/LINK additions
-const STORAGE_KEY = 'market-dashboard-assets-v7'
+// bumped to v8: metals switched to CryptoCompare (XAU/XAG/XPT)
+const STORAGE_KEY = 'market-dashboard-assets-v8'
 
 // Fallback map so stooqSymbol assets without yahooSymbol still resolve correctly
 const STOOQ_TO_YAHOO: Record<string, string> = {
@@ -422,12 +426,13 @@ export default function MarketDashboardApp() {
             placeholder="CC symbol (optional, e.g. sol)"
             style={{ background: 'rgba(15,23,42,0.9)', color: 'white', border: '1px solid rgba(148,163,184,0.22)', borderRadius: 10, padding: '8px 10px' }}
           />
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <button
+            disabled={assets.length >= MAX_ASSETS}
             onClick={() => {
               const name = newName.trim()
               const tv = newTvSymbol.trim()
-              if (!name || !tv) return
+              if (!name || !tv || assets.length >= MAX_ASSETS) return
               const id = `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now()}`
               setAssets((prev) => [
                 ...prev,
@@ -445,10 +450,21 @@ export default function MarketDashboardApp() {
               setNewTvSymbol('')
               setNewPaprikaId('')
             }}
-            style={{ background: 'rgba(59,130,246,0.9)', color: 'white', border: '1px solid rgba(59,130,246,0.5)', borderRadius: 10, padding: '8px 12px', cursor: 'pointer', fontWeight: 700 }}
+            style={{
+              background: assets.length >= MAX_ASSETS ? 'rgba(59,130,246,0.3)' : 'rgba(59,130,246,0.9)',
+              color: 'white',
+              border: '1px solid rgba(59,130,246,0.5)',
+              borderRadius: 10,
+              padding: '8px 12px',
+              cursor: assets.length >= MAX_ASSETS ? 'not-allowed' : 'pointer',
+              fontWeight: 700,
+            }}
           >
             Add
           </button>
+          {assets.length >= MAX_ASSETS && (
+            <span style={{ fontSize: 12, color: 'rgba(251,191,36,0.9)' }}>Max {MAX_ASSETS} assets — remove one first</span>
+          )}
 
           <button
             onClick={() => {
