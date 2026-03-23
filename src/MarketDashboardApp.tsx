@@ -100,11 +100,9 @@ export default function MarketDashboardApp() {
 
   const fetchTD = async (path: string, params: Record<string, string>) => {
     if (!TD_KEY) throw new Error('no TD key')
-    const u = new URL(`http://localhost/api/td${path}`)
-    u.searchParams.set('apikey', TD_KEY)
-    for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v)
-    const rel = u.pathname + u.search
-    const res = await fetch(rel)
+    // Build query string manually — URLSearchParams encodes / and , which breaks TD symbol names
+    const qs = `apikey=${TD_KEY}&` + Object.entries(params).map(([k, v]) => `${k}=${v}`).join('&')
+    const res = await fetch(`/api/td${path}?${qs}`)
     if (!res.ok) throw new Error(`TD ${res.status}`)
     return res.json()
   }
@@ -131,7 +129,7 @@ export default function MarketDashboardApp() {
         }
       }))
 
-      const candleUpdates = await Promise.all(ccAssets.map(async (a) => {
+      const candleUpdates = await Promise.all(ccAssets.map(async (a, i) => {
         try {
           const sym = a.symbol.split('-')[0].toUpperCase()
           const json = await fetchCC('/api/cc/data/v2/histohour', { fsym: sym, tsym: 'USD', limit: '200' })
@@ -139,6 +137,12 @@ export default function MarketDashboardApp() {
           const candles = (rows as any[])
             .filter(r => r && r.time)
             .map(r => ({ time: Number(r.time) as any, open: Number(r.open), high: Number(r.high), low: Number(r.low), close: Number(r.close) }))
+          // Patch last candle's close to match the live price so chart always agrees with the price display
+          const livePrice = priceUpdates[i]?.q?.price
+          if (livePrice && candles.length > 0) {
+            const last = candles[candles.length - 1]
+            candles[candles.length - 1] = { ...last, close: livePrice, high: Math.max(last.high, livePrice), low: Math.min(last.low, livePrice) }
+          }
           return { id: a.id, c: candles }
         } catch { return { id: a.id, c: [] } }
       }))
