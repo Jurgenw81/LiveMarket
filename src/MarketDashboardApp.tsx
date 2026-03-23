@@ -11,10 +11,8 @@ type MarketAsset = {
   tvSymbol: string
   type: AssetType
   currency: string
-  paprikaId?: string   // crypto via CryptoCompare
-  stooqSymbol?: string // indices via stooq
-  yahooSymbol?: string // (legacy, unused)
-  metalKey?: string    // metals via metals.live ('gold' | 'silver' | 'platinum')
+  paprikaId?: string  // crypto → CryptoCompare
+  tdSymbol?: string   // metals/indices → Twelve Data
 }
 
 type ChangeFrame = '5m' | '1h' | '4h' | '1d' | '1w'
@@ -29,14 +27,13 @@ type QuoteData = {
 const MAX_ASSETS = 10
 
 const DEFAULT_ASSETS: MarketAsset[] = [
-  // Metals: price via metals.live, charts via CC histoday
-  { id: 'gold',     name: 'Gold',     symbol: 'XAU/USD', tvSymbol: 'XAU/USD', type: 'metal',  currency: 'USD', metalKey: 'gold'     },
-  { id: 'silver',   name: 'Silver',   symbol: 'XAG/USD', tvSymbol: 'XAG/USD', type: 'metal',  currency: 'USD', metalKey: 'silver'   },
-  { id: 'platinum', name: 'Platinum', symbol: 'XPT/USD', tvSymbol: 'XPT/USD', type: 'metal',  currency: 'USD', metalKey: 'platinum' },
-  // Indices: price via stooq
-  { id: 'nasdaq', name: 'Nasdaq 100', symbol: '^NDX',  tvSymbol: 'OANDA:NAS100USD', type: 'index', currency: 'USD', stooqSymbol: '^ndx' },
-  { id: 'sp500',  name: 'S&P 500',   symbol: '^GSPC', tvSymbol: 'OANDA:SPX500USD', type: 'index', currency: 'USD', stooqSymbol: '^spx' },
-  // Crypto: price + charts via CryptoCompare
+  // Metals + indices via Twelve Data (requires VITE_TWELVE_DATA_KEY env var)
+  { id: 'gold',     name: 'Gold',     symbol: 'XAU/USD', tvSymbol: 'XAU/USD',        type: 'metal',  currency: 'USD', tdSymbol: 'XAU/USD' },
+  { id: 'silver',   name: 'Silver',   symbol: 'XAG/USD', tvSymbol: 'XAG/USD',        type: 'metal',  currency: 'USD', tdSymbol: 'XAG/USD' },
+  { id: 'platinum', name: 'Platinum', symbol: 'XPT/USD', tvSymbol: 'XPT/USD',        type: 'metal',  currency: 'USD', tdSymbol: 'XPT/USD' },
+  { id: 'nasdaq',   name: 'Nasdaq 100', symbol: 'NDX',   tvSymbol: 'OANDA:NAS100USD', type: 'index',  currency: 'USD', tdSymbol: 'NDX'     },
+  { id: 'sp500',    name: 'S&P 500',  symbol: 'SPX',     tvSymbol: 'OANDA:SPX500USD', type: 'index',  currency: 'USD', tdSymbol: 'SPX'     },
+  // Crypto via CryptoCompare
   { id: 'bitcoin',   name: 'Bitcoin',   symbol: 'BTC-USD',  tvSymbol: 'BTC',  type: 'crypto', currency: 'USD', paprikaId: 'btc-bitcoin'   },
   { id: 'ethereum',  name: 'Ethereum',  symbol: 'ETH-USD',  tvSymbol: 'ETH',  type: 'crypto', currency: 'USD', paprikaId: 'eth-ethereum'  },
   { id: 'solana',    name: 'Solana',    symbol: 'SOL-USD',  tvSymbol: 'SOL',  type: 'crypto', currency: 'USD', paprikaId: 'sol-solana'    },
@@ -44,8 +41,8 @@ const DEFAULT_ASSETS: MarketAsset[] = [
   { id: 'bittensor', name: 'Bittensor', symbol: 'TAO-USD',  tvSymbol: 'TAO',  type: 'crypto', currency: 'USD', paprikaId: 'tao-bittensor' },
 ]
 
-// bumped to v9: metals → metals.live, indices → stooq
-const STORAGE_KEY = 'market-dashboard-assets-v9'
+// bumped to v10: all non-crypto switched to Twelve Data
+const STORAGE_KEY = 'market-dashboard-assets-v10'
 
 const FRAME_LABELS: Record<ChangeFrame, string> = {
   '5m': '5m',
@@ -99,140 +96,121 @@ export default function MarketDashboardApp() {
     return res.json()
   }
 
-  // metals.live: returns [{ gold, silver, platinum, ... }] in USD/troy oz
-  const fetchMetalsLive = async () => {
-    const res = await fetch('/api/metals/v1/spot')
-    if (!res.ok) throw new Error(`Metals ${res.status}`)
-    const data = await res.json()
-    return Array.isArray(data) ? data[0] : data
-  }
+  const TD_KEY = import.meta.env.VITE_TWELVE_DATA_KEY as string | undefined
 
-  // stooq current price: returns { symbols: [{ close, ... }] }
-  const fetchStooq = async (symbol: string) => {
-    const res = await fetch(`/api/stooq/q/l/?s=${encodeURIComponent(symbol)}&f=sd2t2ohlcv&h&e=json`)
-    if (!res.ok) throw new Error(`Stooq ${res.status}`)
+  const fetchTD = async (path: string, params: Record<string, string>) => {
+    if (!TD_KEY) throw new Error('no TD key')
+    const u = new URL(`http://localhost/api/td${path}`)
+    u.searchParams.set('apikey', TD_KEY)
+    for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v)
+    const rel = u.pathname + u.search
+    const res = await fetch(rel)
+    if (!res.ok) throw new Error(`TD ${res.status}`)
     return res.json()
-  }
-
-  const fetchQuoteFor = async (a: MarketAsset): Promise<QuoteData> => {
-    const nan5 = { '5m': NaN, '1h': NaN, '4h': NaN, '1d': NaN, '1w': NaN }
-
-    // Crypto: CryptoCompare pricemultifull
-    if (a.paprikaId) {
-      try {
-        const sym = a.symbol.split('-')[0].toUpperCase()
-        const json = await fetchCC('/api/cc/data/pricemultifull', { fsyms: sym, tsyms: 'USD' })
-        const raw = json?.RAW?.[sym]?.USD
-        const price = Number(raw?.PRICE)
-        if (!Number.isFinite(price)) throw new Error('bad price')
-        return { loading: false, price, changes: { '5m': NaN, '1h': Number(raw?.CHANGEPCTHOUR), '4h': NaN, '1d': Number(raw?.CHANGEPCT24HOUR), '1w': NaN } }
-      } catch (e: any) {
-        return { loading: false, error: e?.message ?? 'quote error' }
-      }
-    }
-
-    // Metals: metals.live
-    if (a.metalKey) {
-      try {
-        const data = await fetchMetalsLive()
-        const price = Number(data[a.metalKey])
-        if (!Number.isFinite(price)) throw new Error('bad price')
-        return { loading: false, price, changes: nan5 }
-      } catch (e: any) {
-        return { loading: false, error: e?.message ?? 'metals error' }
-      }
-    }
-
-    // Indices: stooq current price
-    if (a.stooqSymbol) {
-      try {
-        const json = await fetchStooq(a.stooqSymbol)
-        const price = Number(json?.symbols?.[0]?.close)
-        if (!Number.isFinite(price)) throw new Error('bad price')
-        return { loading: false, price, changes: nan5 }
-      } catch (e: any) {
-        return { loading: false, error: e?.message ?? 'stooq error' }
-      }
-    }
-
-    return { loading: false, error: 'no price source' }
   }
 
   const [candlesById, setCandlesById] = useState<Record<string, Candle[]>>({})
 
-  const fetchCandlesFor = async (a: MarketAsset): Promise<Candle[]> => {
-    // Crypto: CryptoCompare histohour
-    if (a.paprikaId) {
-      try {
-        const sym = a.symbol.split('-')[0].toUpperCase()
-        const json = await fetchCC('/api/cc/data/v2/histohour', { fsym: sym, tsym: 'USD', limit: '200' })
-        const rows = json?.Data?.Data || []
-        return (rows as any[])
-          .filter((r) => r && r.time)
-          .map((r) => ({ time: Number(r.time) as any, open: Number(r.open), high: Number(r.high), low: Number(r.low), close: Number(r.close) }))
-      } catch { return [] }
-    }
-
-    // Metals: CryptoCompare histoday (XAU/XAG/XPT)
-    if (a.metalKey) {
-      const ccSym: Record<string, string> = { gold: 'XAU', silver: 'XAG', platinum: 'XPT' }
-      const sym = ccSym[a.metalKey]
-      if (!sym) return []
-      try {
-        const json = await fetchCC('/api/cc/data/v2/histoday', { fsym: sym, tsym: 'USD', limit: '365' })
-        const rows = json?.Data?.Data || []
-        return (rows as any[])
-          .filter((r) => r && r.time && r.close > 0)
-          .map((r) => ({ time: Number(r.time) as any, open: Number(r.open), high: Number(r.high), low: Number(r.low), close: Number(r.close) }))
-      } catch { return [] }
-    }
-
-    // Indices (stooq): no historical JSON available — charts left empty
-    return []
-  }
-
+  // ── Crypto refresh: CryptoCompare, every 60 s ────────────────────────────
   useEffect(() => {
+    const ccAssets = assets.filter(a => a.paprikaId)
+    if (!ccAssets.length) return
     let stop = false
 
     const run = async () => {
-      setQuotes((prev) => {
-        const next = { ...prev }
-        for (const a of assets) {
-          next[a.id] = next[a.id] || { loading: true }
-          next[a.id] = { ...next[a.id], loading: true }
+      const priceUpdates = await Promise.all(ccAssets.map(async (a) => {
+        try {
+          const sym = a.symbol.split('-')[0].toUpperCase()
+          const json = await fetchCC('/api/cc/data/pricemultifull', { fsyms: sym, tsyms: 'USD' })
+          const raw = json?.RAW?.[sym]?.USD
+          const price = Number(raw?.PRICE)
+          if (!Number.isFinite(price)) throw new Error('bad price')
+          return { id: a.id, q: { loading: false, price, changes: { '5m': NaN, '1h': Number(raw?.CHANGEPCTHOUR), '4h': NaN, '1d': Number(raw?.CHANGEPCT24HOUR), '1w': NaN } } as QuoteData }
+        } catch (e: any) {
+          return { id: a.id, q: { loading: false, error: e?.message ?? 'error' } as QuoteData }
         }
-        return next
-      })
+      }))
 
-      const updates = await Promise.all(
-        assets.map(async (a) => ({ id: a.id, q: await fetchQuoteFor(a) }))
-      )
-
-      const candleUpdates = await Promise.all(
-        assets.map(async (a) => ({ id: a.id, c: await fetchCandlesFor(a) }))
-      )
+      const candleUpdates = await Promise.all(ccAssets.map(async (a) => {
+        try {
+          const sym = a.symbol.split('-')[0].toUpperCase()
+          const json = await fetchCC('/api/cc/data/v2/histohour', { fsym: sym, tsym: 'USD', limit: '200' })
+          const rows = json?.Data?.Data || []
+          const candles = (rows as any[])
+            .filter(r => r && r.time)
+            .map(r => ({ time: Number(r.time) as any, open: Number(r.open), high: Number(r.high), low: Number(r.low), close: Number(r.close) }))
+          return { id: a.id, c: candles }
+        } catch { return { id: a.id, c: [] } }
+      }))
 
       if (stop) return
-
-      setQuotes((prev) => {
-        const next = { ...prev }
-        for (const u of updates) next[u.id] = u.q
-        return next
-      })
-
-      setCandlesById((prev) => {
-        const next = { ...prev }
-        for (const u of candleUpdates) next[u.id] = u.c
-        return next
-      })
+      setQuotes(prev => { const n = { ...prev }; for (const u of priceUpdates) n[u.id] = u.q; return n })
+      setCandlesById(prev => { const n = { ...prev }; for (const u of candleUpdates) n[u.id] = u.c; return n })
     }
 
     run()
     const t = window.setInterval(run, 60_000)
-    return () => {
-      stop = true
-      window.clearInterval(t)
+    return () => { stop = true; window.clearInterval(t) }
+  }, [assets])
+
+  // ── Non-crypto refresh: Twelve Data, every 3 min ─────────────────────────
+  useEffect(() => {
+    const tdAssets = assets.filter(a => a.tdSymbol)
+    if (!tdAssets.length) return
+    let stop = false
+
+    const runPrices = async () => {
+      if (!TD_KEY) {
+        const err = { loading: false, error: 'add VITE_TWELVE_DATA_KEY to Vercel env' } as QuoteData
+        setQuotes(prev => { const n = { ...prev }; for (const a of tdAssets) n[a.id] = err; return n })
+        return
+      }
+      const symbols = tdAssets.map(a => a.tdSymbol!).join(',')
+      try {
+        const json = await fetchTD('/price', { symbol: symbols })
+        if (stop) return
+        setQuotes(prev => {
+          const n = { ...prev }
+          for (const a of tdAssets) {
+            const raw = tdAssets.length === 1 ? json : json[a.tdSymbol!]
+            const price = Number(raw?.price)
+            n[a.id] = Number.isFinite(price)
+              ? { loading: false, price, changes: { '5m': NaN, '1h': NaN, '4h': NaN, '1d': NaN, '1w': NaN } }
+              : { loading: false, error: 'bad price' }
+          }
+          return n
+        })
+      } catch (e: any) {
+        if (stop) return
+        const err = { loading: false, error: e?.message ?? 'TD error' } as QuoteData
+        setQuotes(prev => { const n = { ...prev }; for (const a of tdAssets) n[a.id] = err; return n })
+      }
     }
+
+    const runCandles = async () => {
+      if (!TD_KEY) return
+      const candleUpdates = await Promise.all(tdAssets.map(async (a) => {
+        try {
+          const json = await fetchTD('/time_series', { symbol: a.tdSymbol!, interval: '1day', outputsize: '365' })
+          if (json.status === 'error') return { id: a.id, c: [] }
+          const rows: any[] = (json.values || []).slice().reverse()
+          const candles = rows
+            .filter(r => r.datetime && Number(r.close) > 0)
+            .map(r => ({
+              time: (new Date(r.datetime).getTime() / 1000) as any,
+              open: Number(r.open), high: Number(r.high), low: Number(r.low), close: Number(r.close),
+            }))
+          return { id: a.id, c: candles }
+        } catch { return { id: a.id, c: [] } }
+      }))
+      if (stop) return
+      setCandlesById(prev => { const n = { ...prev }; for (const u of candleUpdates) n[u.id] = u.c; return n })
+    }
+
+    runPrices()
+    runCandles() // load charts once on mount
+    const t = window.setInterval(runPrices, 3 * 60_000)
+    return () => { stop = true; window.clearInterval(t) }
   }, [assets])
 
 // TradingView widget removed (was falling back to AAPL / paywalled symbols).

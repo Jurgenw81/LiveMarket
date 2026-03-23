@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react'
-import { createChart, type IChartApi, type UTCTimestamp } from 'lightweight-charts'
+import { createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from 'lightweight-charts'
 
 export type Candle = {
   time: UTCTimestamp
@@ -12,12 +12,12 @@ export type Candle = {
 export default function ChartPanel({ candles }: { candles: Candle[] }) {
   const hostRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
+  const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
 
+  // Create chart once on mount
   useEffect(() => {
     if (!hostRef.current) return
-
     const el = hostRef.current
-    el.innerHTML = ''
 
     const chart = createChart(el, {
       layout: {
@@ -28,12 +28,8 @@ export default function ChartPanel({ candles }: { candles: Candle[] }) {
         vertLines: { color: 'rgba(148,163,184,0.12)' },
         horzLines: { color: 'rgba(148,163,184,0.12)' },
       },
-      rightPriceScale: {
-        borderColor: 'rgba(148,163,184,0.2)',
-      },
-      timeScale: {
-        borderColor: 'rgba(148,163,184,0.2)',
-      },
+      rightPriceScale: { borderColor: 'rgba(148,163,184,0.2)' },
+      timeScale: { borderColor: 'rgba(148,163,184,0.2)' },
       crosshair: {
         vertLine: { color: 'rgba(148,163,184,0.25)' },
         horzLine: { color: 'rgba(148,163,184,0.25)' },
@@ -42,7 +38,7 @@ export default function ChartPanel({ candles }: { candles: Candle[] }) {
       height: el.clientHeight,
     })
 
-    const series = chart.addCandlestickSeries({
+    seriesRef.current = chart.addCandlestickSeries({
       upColor: '#22c55e',
       downColor: '#ef4444',
       wickUpColor: '#22c55e',
@@ -50,21 +46,26 @@ export default function ChartPanel({ candles }: { candles: Candle[] }) {
       borderVisible: false,
     })
 
-    series.setData(candles)
-    chart.timeScale().fitContent()
+    chartRef.current = chart
 
     const ro = new ResizeObserver(() => {
       chart.applyOptions({ width: el.clientWidth, height: el.clientHeight })
     })
     ro.observe(el)
 
-    chartRef.current = chart
-
     return () => {
       ro.disconnect()
       chart.remove()
       chartRef.current = null
+      seriesRef.current = null
     }
+  }, [])
+
+  // Update data whenever candles change without recreating the chart
+  useEffect(() => {
+    if (!seriesRef.current || !candles.length) return
+    seriesRef.current.setData(candles)
+    chartRef.current?.timeScale().fitContent()
   }, [candles])
 
   return <div ref={hostRef} style={{ width: '100%', height: '100%' }} />

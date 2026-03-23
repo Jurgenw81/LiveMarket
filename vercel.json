@@ -3,9 +3,8 @@
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
-    { "source": "/api/cc/:path*",     "destination": "https://min-api.cryptocompare.com/:path*" },
-    { "source": "/api/metals/:path*", "destination": "https://api.metals.live/:path*" },
-    { "source": "/api/stooq/:path*",  "destination": "https://stooq.com/:path*" },
-    { "source": "/((?!api/).*)",      "destination": "/index.html" }
+    { "source": "/api/cc/:path*", "destination": "https://min-api.cryptocompare.com/:path*" },
+    { "source": "/api/td/:path*", "destination": "https://api.twelvedata.com/:path*" },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
 }
