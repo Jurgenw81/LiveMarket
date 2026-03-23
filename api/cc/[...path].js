@@ -1,6 +1,7 @@
 export default async function handler(req, res) {
-  const path = req.url.replace(/^\/api\/cc/, '')
-  const upstream = `https://min-api.cryptocompare.com${path}`
+  const segments = Array.isArray(req.query.path) ? req.query.path : [req.query.path]
+  const qs = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''
+  const upstream = `https://min-api.cryptocompare.com/${segments.join('/')}${qs}`
 
   const upstreamRes = await fetch(upstream)
   const body = await upstreamRes.text()
