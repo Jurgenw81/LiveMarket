@@ -11,9 +11,10 @@ type MarketAsset = {
   tvSymbol: string
   type: AssetType
   currency: string
-  paprikaId?: string
-  stooqSymbol?: string
-  yahooSymbol?: string
+  paprikaId?: string   // crypto via CryptoCompare
+  stooqSymbol?: string // indices via stooq
+  yahooSymbol?: string // (legacy, unused)
+  metalKey?: string    // metals via metals.live ('gold' | 'silver' | 'platinum')
 }
 
 type ChangeFrame = '5m' | '1h' | '4h' | '1d' | '1w'
@@ -28,14 +29,14 @@ type QuoteData = {
 const MAX_ASSETS = 10
 
 const DEFAULT_ASSETS: MarketAsset[] = [
-  // Metals via CryptoCompare (XAU/XAG/XPT) — Yahoo Finance blocks cloud IPs
-  { id: 'gold',     name: 'Gold',     symbol: 'XAU-USD', tvSymbol: 'XAU/USD', type: 'metal',  currency: 'USD', paprikaId: 'xau' },
-  { id: 'silver',   name: 'Silver',   symbol: 'XAG-USD', tvSymbol: 'XAG/USD', type: 'metal',  currency: 'USD', paprikaId: 'xag' },
-  { id: 'platinum', name: 'Platinum', symbol: 'XPT-USD', tvSymbol: 'XPT/USD', type: 'metal',  currency: 'USD', paprikaId: 'xpt' },
-  // Indices via Yahoo Finance (best-effort)
-  { id: 'nasdaq', name: 'Nasdaq 100', symbol: '^NDX',  tvSymbol: 'OANDA:NAS100USD', type: 'index', currency: 'USD', yahooSymbol: '^NDX'  },
-  { id: 'sp500',  name: 'S&P 500',   symbol: '^GSPC', tvSymbol: 'OANDA:SPX500USD', type: 'index', currency: 'USD', yahooSymbol: '^GSPC' },
-  // Crypto via CryptoCompare
+  // Metals: price via metals.live, charts via CC histoday
+  { id: 'gold',     name: 'Gold',     symbol: 'XAU/USD', tvSymbol: 'XAU/USD', type: 'metal',  currency: 'USD', metalKey: 'gold'     },
+  { id: 'silver',   name: 'Silver',   symbol: 'XAG/USD', tvSymbol: 'XAG/USD', type: 'metal',  currency: 'USD', metalKey: 'silver'   },
+  { id: 'platinum', name: 'Platinum', symbol: 'XPT/USD', tvSymbol: 'XPT/USD', type: 'metal',  currency: 'USD', metalKey: 'platinum' },
+  // Indices: price via stooq
+  { id: 'nasdaq', name: 'Nasdaq 100', symbol: '^NDX',  tvSymbol: 'OANDA:NAS100USD', type: 'index', currency: 'USD', stooqSymbol: '^ndx' },
+  { id: 'sp500',  name: 'S&P 500',   symbol: '^GSPC', tvSymbol: 'OANDA:SPX500USD', type: 'index', currency: 'USD', stooqSymbol: '^spx' },
+  // Crypto: price + charts via CryptoCompare
   { id: 'bitcoin',   name: 'Bitcoin',   symbol: 'BTC-USD',  tvSymbol: 'BTC',  type: 'crypto', currency: 'USD', paprikaId: 'btc-bitcoin'   },
   { id: 'ethereum',  name: 'Ethereum',  symbol: 'ETH-USD',  tvSymbol: 'ETH',  type: 'crypto', currency: 'USD', paprikaId: 'eth-ethereum'  },
   { id: 'solana',    name: 'Solana',    symbol: 'SOL-USD',  tvSymbol: 'SOL',  type: 'crypto', currency: 'USD', paprikaId: 'sol-solana'    },
@@ -43,20 +44,8 @@ const DEFAULT_ASSETS: MarketAsset[] = [
   { id: 'bittensor', name: 'Bittensor', symbol: 'TAO-USD',  tvSymbol: 'TAO',  type: 'crypto', currency: 'USD', paprikaId: 'tao-bittensor' },
 ]
 
-// bumped to v8: metals switched to CryptoCompare (XAU/XAG/XPT)
-const STORAGE_KEY = 'market-dashboard-assets-v8'
-
-// Fallback map so stooqSymbol assets without yahooSymbol still resolve correctly
-const STOOQ_TO_YAHOO: Record<string, string> = {
-  '^ndx': '^NDX',
-  '^spx': '^GSPC',
-  'xauusd': 'GC=F',
-  'xagusd': 'SI=F',
-  'xptusd': 'PL=F',
-}
-
-const resolveYahooSymbol = (a: MarketAsset): string | undefined =>
-  a.yahooSymbol ?? (a.stooqSymbol ? STOOQ_TO_YAHOO[a.stooqSymbol.toLowerCase()] : undefined)
+// bumped to v9: metals → metals.live, indices → stooq
+const STORAGE_KEY = 'market-dashboard-assets-v9'
 
 const FRAME_LABELS: Record<ChangeFrame, string> = {
   '5m': '5m',
@@ -101,24 +90,6 @@ export default function MarketDashboardApp() {
     } catch {}
   }, [assets])
 
-  const fetchPaprika = async (path: string, params: Record<string, string>) => {
-    const u = new URL(`http://localhost${path}`)
-    for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v)
-    const rel = u.pathname + (u.search ? u.search : '')
-    const res = await fetch(rel)
-    if (!res.ok) throw new Error(`Paprika ${res.status}`)
-    return res.json()
-  }
-
-  const fetchYahoo = async (symbol: string, params: Record<string, string>) => {
-    const u = new URL(`http://localhost/api/yahoo/v8/finance/chart/${encodeURIComponent(symbol)}`)
-    for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v)
-    const rel = u.pathname + u.search
-    const res = await fetch(rel)
-    if (!res.ok) throw new Error(`Yahoo ${res.status}`)
-    return res.json()
-  }
-
   const fetchCC = async (path: string, params: Record<string, string>) => {
     const u = new URL(`http://localhost${path}`)
     for (const [k, v] of Object.entries(params)) u.searchParams.set(k, v)
@@ -128,8 +99,25 @@ export default function MarketDashboardApp() {
     return res.json()
   }
 
+  // metals.live: returns [{ gold, silver, platinum, ... }] in USD/troy oz
+  const fetchMetalsLive = async () => {
+    const res = await fetch('/api/metals/v1/spot')
+    if (!res.ok) throw new Error(`Metals ${res.status}`)
+    const data = await res.json()
+    return Array.isArray(data) ? data[0] : data
+  }
+
+  // stooq current price: returns { symbols: [{ close, ... }] }
+  const fetchStooq = async (symbol: string) => {
+    const res = await fetch(`/api/stooq/q/l/?s=${encodeURIComponent(symbol)}&f=sd2t2ohlcv&h&e=json`)
+    if (!res.ok) throw new Error(`Stooq ${res.status}`)
+    return res.json()
+  }
+
   const fetchQuoteFor = async (a: MarketAsset): Promise<QuoteData> => {
-    // Source 1: CryptoCompare pricemultifull (crypto)
+    const nan5 = { '5m': NaN, '1h': NaN, '4h': NaN, '1d': NaN, '1w': NaN }
+
+    // Crypto: CryptoCompare pricemultifull
     if (a.paprikaId) {
       try {
         const sym = a.symbol.split('-')[0].toUpperCase()
@@ -137,45 +125,33 @@ export default function MarketDashboardApp() {
         const raw = json?.RAW?.[sym]?.USD
         const price = Number(raw?.PRICE)
         if (!Number.isFinite(price)) throw new Error('bad price')
-
-        const changes: Record<ChangeFrame, number> = {
-          '5m': NaN,
-          '1h': Number(raw?.CHANGEPCTHOUR),
-          '4h': NaN,
-          '1d': Number(raw?.CHANGEPCT24HOUR),
-          '1w': NaN,
-        }
-
-        return { loading: false, price, changes }
+        return { loading: false, price, changes: { '5m': NaN, '1h': Number(raw?.CHANGEPCTHOUR), '4h': NaN, '1d': Number(raw?.CHANGEPCT24HOUR), '1w': NaN } }
       } catch (e: any) {
         return { loading: false, error: e?.message ?? 'quote error' }
       }
     }
 
-    // Source 2: Yahoo Finance daily (indices/metals) -> price, 1D, 1W
-    const yahooQ = resolveYahooSymbol(a)
-    if (yahooQ) {
+    // Metals: metals.live
+    if (a.metalKey) {
       try {
-        const json = await fetchYahoo(yahooQ, { interval: '1d', range: '10d' })
-        const result = json?.chart?.result?.[0]
-        if (!result) throw new Error('no data')
-        const price = Number(result.meta?.regularMarketPrice)
+        const data = await fetchMetalsLive()
+        const price = Number(data[a.metalKey])
         if (!Number.isFinite(price)) throw new Error('bad price')
-        const closes: number[] = (result.indicators?.quote?.[0]?.close ?? [])
-          .map(Number).filter(Number.isFinite)
-        const last = closes[closes.length - 1]
-        const prev = closes[closes.length - 2]
-        const weekAgo = closes[Math.max(0, closes.length - 6)]
-        const changes: Record<ChangeFrame, number> = {
-          '5m': NaN,
-          '1h': NaN,
-          '4h': NaN,
-          '1d': prev > 0 ? ((last - prev) / prev) * 100 : NaN,
-          '1w': weekAgo > 0 ? ((last - weekAgo) / weekAgo) * 100 : NaN,
-        }
-        return { loading: false, price, changes }
+        return { loading: false, price, changes: nan5 }
       } catch (e: any) {
-        return { loading: false, error: e?.message ?? 'yahoo error' }
+        return { loading: false, error: e?.message ?? 'metals error' }
+      }
+    }
+
+    // Indices: stooq current price
+    if (a.stooqSymbol) {
+      try {
+        const json = await fetchStooq(a.stooqSymbol)
+        const price = Number(json?.symbols?.[0]?.close)
+        if (!Number.isFinite(price)) throw new Error('bad price')
+        return { loading: false, price, changes: nan5 }
+      } catch (e: any) {
+        return { loading: false, error: e?.message ?? 'stooq error' }
       }
     }
 
@@ -185,52 +161,34 @@ export default function MarketDashboardApp() {
   const [candlesById, setCandlesById] = useState<Record<string, Candle[]>>({})
 
   const fetchCandlesFor = async (a: MarketAsset): Promise<Candle[]> => {
-    // Crypto candles: CryptoCompare histohour (last ~8 days)
+    // Crypto: CryptoCompare histohour
     if (a.paprikaId) {
       try {
-        const sym = a.symbol.split('-')[0].toUpperCase() // BTC-USD -> BTC
-        const json = await fetchCC('/api/cc/data/v2/histohour', {
-          fsym: sym,
-          tsym: 'USD',
-          limit: '200',
-        })
+        const sym = a.symbol.split('-')[0].toUpperCase()
+        const json = await fetchCC('/api/cc/data/v2/histohour', { fsym: sym, tsym: 'USD', limit: '200' })
         const rows = json?.Data?.Data || []
         return (rows as any[])
           .filter((r) => r && r.time)
-          .map((r) => ({
-            time: Number(r.time) as any,
-            open: Number(r.open),
-            high: Number(r.high),
-            low: Number(r.low),
-            close: Number(r.close),
-          }))
-      } catch {
-        return []
-      }
+          .map((r) => ({ time: Number(r.time) as any, open: Number(r.open), high: Number(r.high), low: Number(r.low), close: Number(r.close) }))
+      } catch { return [] }
     }
 
-    // Indices/metals: Yahoo Finance daily
-    const yahooSym = resolveYahooSymbol(a)
-    if (!yahooSym) return []
-    try {
-      const json = await fetchYahoo(yahooSym, { interval: '1d', range: '1y' })
-      const result = json?.chart?.result?.[0]
-      if (!result) return []
-      const timestamps: number[] = result.timestamp ?? []
-      const q = result.indicators?.quote?.[0] ?? {}
-      const out: Candle[] = []
-      for (let i = 0; i < timestamps.length; i++) {
-        const open = Number(q.open?.[i])
-        const high = Number(q.high?.[i])
-        const low = Number(q.low?.[i])
-        const close = Number(q.close?.[i])
-        if ([open, high, low, close].some((x) => !Number.isFinite(x) || x <= 0)) continue
-        out.push({ time: timestamps[i] as any, open, high, low, close })
-      }
-      return out
-    } catch {
-      return []
+    // Metals: CryptoCompare histoday (XAU/XAG/XPT)
+    if (a.metalKey) {
+      const ccSym: Record<string, string> = { gold: 'XAU', silver: 'XAG', platinum: 'XPT' }
+      const sym = ccSym[a.metalKey]
+      if (!sym) return []
+      try {
+        const json = await fetchCC('/api/cc/data/v2/histoday', { fsym: sym, tsym: 'USD', limit: '365' })
+        const rows = json?.Data?.Data || []
+        return (rows as any[])
+          .filter((r) => r && r.time && r.close > 0)
+          .map((r) => ({ time: Number(r.time) as any, open: Number(r.open), high: Number(r.high), low: Number(r.low), close: Number(r.close) }))
+      } catch { return [] }
     }
+
+    // Indices (stooq): no historical JSON available — charts left empty
+    return []
   }
 
   useEffect(() => {
